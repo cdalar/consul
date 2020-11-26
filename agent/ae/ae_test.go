@@ -75,9 +75,9 @@ func TestAE_Pause_ResumeTriggersSyncChanges(t *testing.T) {
 	l.Pause()
 	l.Resume()
 	select {
-	case <-l.SyncChanges.Notif():
+	case <-l.SyncChanges.Wait():
 		// expected
-	case <-l.SyncFull.Notif():
+	case <-l.SyncFull.Wait():
 		t.Fatal("resume triggered SyncFull instead of SyncChanges")
 	default:
 		t.Fatal("resume did not trigger SyncFull")

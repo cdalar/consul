@@ -147,7 +147,7 @@ func TestStateSyncer_NextFSMState(t *testing.T) {
 		t.Run("Paused -> retryFullSyncState", func(t *testing.T) {
 			l := testSyncer(t)
 			l.Pause()
-			fs := l.nextFSMState(fullSyncState)
+			fs := l.sync(fullSyncState)
 			if got, want := fs, retryFullSyncState; got != want {
 				t.Fatalf("got state %v want %v", got, want)
 			}
@@ -155,7 +155,7 @@ func TestStateSyncer_NextFSMState(t *testing.T) {
 		t.Run("SyncFull() error -> retryFullSyncState", func(t *testing.T) {
 			l := testSyncer(t)
 			l.State = &mock{syncFull: func() error { return errors.New("boom") }}
-			fs := l.nextFSMState(fullSyncState)
+			fs := l.sync(fullSyncState)
 			if got, want := fs, retryFullSyncState; got != want {
 				t.Fatalf("got state %v want %v", got, want)
 			}
@@ -163,7 +163,7 @@ func TestStateSyncer_NextFSMState(t *testing.T) {
 		t.Run("SyncFull() OK -> partialSyncState", func(t *testing.T) {
 			l := testSyncer(t)
 			l.State = &mock{}
-			fs := l.nextFSMState(fullSyncState)
+			fs := l.sync(fullSyncState)
 			if got, want := fs, partialSyncState; got != want {
 				t.Fatalf("got state %v want %v", got, want)
 			}
@@ -175,7 +175,7 @@ func TestStateSyncer_NextFSMState(t *testing.T) {
 		test := func(ev event, to fsmState) {
 			l := testSyncer(t)
 			l.retrySyncFullEvent = func() event { return ev }
-			fs := l.nextFSMState(retryFullSyncState)
+			fs := l.sync(retryFullSyncState)
 			if got, want := fs, to; got != want {
 				t.Fatalf("got state %v want %v", got, want)
 			}
@@ -205,7 +205,7 @@ func TestStateSyncer_NextFSMState(t *testing.T) {
 		test := func(ev event, to fsmState) {
 			l := testSyncer(t)
 			l.syncChangesEvent = func() event { return ev }
-			fs := l.nextFSMState(partialSyncState)
+			fs := l.sync(partialSyncState)
 			if got, want := fs, to; got != want {
 				t.Fatalf("got state %v want %v", got, want)
 			}
@@ -223,7 +223,7 @@ func TestStateSyncer_NextFSMState(t *testing.T) {
 			l := testSyncer(t)
 			l.Pause()
 			l.syncChangesEvent = func() event { return syncChangesNotifEvent }
-			fs := l.nextFSMState(partialSyncState)
+			fs := l.sync(partialSyncState)
 			if got, want := fs, partialSyncState; got != want {
 				t.Fatalf("got state %v want %v", got, want)
 			}
@@ -232,7 +232,7 @@ func TestStateSyncer_NextFSMState(t *testing.T) {
 			l := testSyncer(t)
 			l.State = &mock{syncChanges: func() error { return errors.New("boom") }}
 			l.syncChangesEvent = func() event { return syncChangesNotifEvent }
-			fs := l.nextFSMState(partialSyncState)
+			fs := l.sync(partialSyncState)
 			if got, want := fs, partialSyncState; got != want {
 				t.Fatalf("got state %v want %v", got, want)
 			}
@@ -241,7 +241,7 @@ func TestStateSyncer_NextFSMState(t *testing.T) {
 			l := testSyncer(t)
 			l.State = &mock{}
 			l.syncChangesEvent = func() event { return syncChangesNotifEvent }
-			fs := l.nextFSMState(partialSyncState)
+			fs := l.sync(partialSyncState)
 			if got, want := fs, partialSyncState; got != want {
 				t.Fatalf("got state %v want %v", got, want)
 			}
@@ -264,7 +264,7 @@ func TestStateSyncer_NextFSMState(t *testing.T) {
 			}
 		}()
 		l := testSyncer(t)
-		l.nextFSMState(fsmState("invalid"))
+		l.sync(fsmState("invalid"))
 	})
 }
 

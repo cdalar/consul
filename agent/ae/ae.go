@@ -100,68 +100,44 @@ func NewStateSyncer(state SyncState, intv time.Duration, shutdownCh chan struct{
 	return s
 }
 
-// fsmState defines states for the state machine.
-type fsmState string
-
-const (
-	doneState        fsmState = "done"
-	fullSyncState    fsmState = "fullSync"
-	partialSyncState fsmState = "partialSync"
-)
-
 // Run is the long running method to perform state synchronization
 // between local and remote servers.
 func (s *StateSyncer) Run() {
-	state := fullSyncState
-	for state != doneState {
-		state = s.nextFSMState(state)
+	var err error
+	if err = s.doFullSync(); err != nil {
+		return
+	}
+	for err == nil {
+		err = s.sync()
 	}
 }
 
-// nextFSMState determines the next state based on the current state.
-func (s *StateSyncer) nextFSMState(fs fsmState) fsmState {
-	switch fs {
-	case fullSyncState:
-		s.waitNextFullSync = time.After(s.Interval + s.Delayer.Jitter(s.Interval))
+func (s *StateSyncer) sync() error {
+	select {
+	case <-s.SyncFull.Wait():
+		return s.waitFullSyncDelay()
+
+	case <-s.waitNextFullSync:
+		return s.doFullSync()
+
+	case <-s.SyncChanges.Wait():
 		if s.isPaused() {
-			return s.retryFullSync()
+			return nil
 		}
 
-		if err := s.State.SyncFull(); err != nil {
-			s.Logger.Error("failed to sync remote state", "error", err)
-			return s.retryFullSync()
+		if err := s.State.SyncChanges(); err != nil {
+			s.Logger.Error("failed to sync changes", "error", err)
 		}
+		return nil
 
-		return partialSyncState
-
-	case partialSyncState:
-		select {
-		case <-s.SyncFull.Wait():
-			return s.waitFullSyncDelay()
-
-		case <-s.waitNextFullSync:
-			return fullSyncState
-
-		case <-s.SyncChanges.Wait():
-			if s.isPaused() {
-				return partialSyncState
-			}
-
-			if err := s.State.SyncChanges(); err != nil {
-				s.Logger.Error("failed to sync changes", "error", err)
-			}
-			return partialSyncState
-
-		case <-s.ShutdownCh:
-			return doneState
-		}
-
-	default:
-		panic(fmt.Sprintf("invalid state: %s", fs))
+	case <-s.ShutdownCh:
+		return errShutdown
 	}
 }
 
-func (s *StateSyncer) retryFullSync() fsmState {
+var errShutdown = fmt.Errorf("shutdown")
+
+func (s *StateSyncer) retryFullSync() error {
 	// FIXME: We enter this state if StateSyncer.isPaused, but Resume does
 	// not SyncFull.Trigger. It only calls SyncChanges.Trigger. This seems
 	// like an oversight. Entering this loop will block until a server is
@@ -174,20 +150,34 @@ func (s *StateSyncer) retryFullSync() fsmState {
 	// retry full sync after some time
 	// it is using retryFailInterval because it is retrying the sync
 	case <-time.After(s.retryFailInterval + s.Delayer.Jitter(s.retryFailInterval)):
-		return fullSyncState
+		return s.doFullSync()
 
 	case <-s.ShutdownCh:
-		return doneState
+		return errShutdown
 	}
 }
 
-func (s *StateSyncer) waitFullSyncDelay() fsmState {
+func (s *StateSyncer) waitFullSyncDelay() error {
 	select {
 	case <-time.After(s.Delayer.Jitter(s.serverUpInterval)):
-		return fullSyncState
+		return s.doFullSync()
 	case <-s.ShutdownCh:
-		return doneState
+		return errShutdown
 	}
+}
+
+func (s *StateSyncer) doFullSync() error {
+	s.waitNextFullSync = time.After(s.Interval + s.Delayer.Jitter(s.Interval))
+	if s.isPaused() {
+		return s.retryFullSync()
+	}
+
+	if err := s.State.SyncFull(); err != nil {
+		s.Logger.Error("failed to sync remote state", "error", err)
+		return s.retryFullSync()
+	}
+
+	return nil
 }
 
 // shim for testing
